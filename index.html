@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mini Hole Dash</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg1: #1e1b4b;
+      --bg2: #0f172a;
+      --accent: #22d3ee;
+      --good: #34d399;
+      --warn: #f59e0b;
+      --bad: #fb7185;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+      background: radial-gradient(circle at 25% 20%, #312e81 0%, var(--bg1) 30%, var(--bg2) 100%);
+      color: #e2e8f0;
+      overflow: hidden;
+    }
+
+    .wrap {
+      width: min(95vw, 980px);
+      height: min(92vh, 680px);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 10px;
+    }
+
+    .hud {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .card {
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 12px;
+      padding: 10px 12px;
+      backdrop-filter: blur(6px);
+      box-shadow: 0 8px 30px rgba(2, 6, 23, 0.28);
+    }
+
+    .label {
+      display: block;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #94a3b8;
+    }
+
+    .value {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: #f8fafc;
+    }
+
+    #game {
+      width: 100%;
+      height: 100%;
+      border-radius: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      background: linear-gradient(180deg, #24304b, #161f35);
+      display: block;
+      box-shadow: 0 10px 35px rgba(2, 6, 23, 0.5);
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(2, 6, 23, 0.6);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 0.95rem;
+    }
+
+    button {
+      border: none;
+      border-radius: 10px;
+      background: linear-gradient(120deg, #06b6d4, #3b82f6);
+      color: white;
+      font-weight: 700;
+      font-size: 0.95rem;
+      padding: 10px 14px;
+      cursor: pointer;
+      transition: transform 120ms ease, filter 120ms ease;
+    }
+
+    button:hover { transform: translateY(-1px); filter: brightness(1.08); }
+    button:active { transform: translateY(0); }
+
+    .hint { color: #cbd5e1; }
+    .touch { display: none; color: var(--accent); font-weight: 600; }
+
+    @media (pointer: coarse) {
+      .touch { display: inline; }
+    }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(2, 6, 23, 0.58);
+      display: grid;
+      place-items: center;
+      z-index: 20;
+      transition: opacity 180ms ease;
+    }
+
+    .overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .panel {
+      width: min(92vw, 520px);
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      border-radius: 18px;
+      padding: 20px;
+      text-align: center;
+      box-shadow: 0 16px 45px rgba(2, 6, 23, 0.6);
+    }
+
+    .panel h1 { margin: 0 0 8px; }
+    .panel p { margin: 8px 0; color: #cbd5e1; }
+    .result { color: var(--good); font-weight: 700; }
+    .danger { color: var(--bad); font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hud">
+      <div class="card"><span class="label">Score</span><span id="score" class="value">0</span></div>
+      <div class="card"><span class="label">Hole Size</span><span id="size" class="value">1.00x</span></div>
+      <div class="card"><span class="label">Time Left</span><span id="time" class="value">90</span></div>
+      <div class="card"><span class="label">High Score</span><span id="high" class="value">0</span></div>
+    </div>
+
+    <canvas id="game" width="980" height="560" aria-label="Mini Hole Dash"></canvas>
+
+    <div class="controls">
+      <div class="hint">Move with <strong>WASD / Arrows</strong> or <strong>mouse/touch</strong>. Swallow smaller objects; avoid bigger ones!</div>
+      <div>
+        <span class="touch">Tap to steer!</span>
+        <button id="restartBtn" type="button">Restart</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="overlay" class="overlay">
+    <div class="panel">
+      <h1>🕳️ Mini Hole Dash</h1>
+      <p>Gobble everything smaller than your hole. Bigger stuff will bounce you back and stun you briefly.</p>
+      <p>Clear as much as possible in <strong>90 seconds</strong>!</p>
+      <button id="startBtn" type="button">Start Game</button>
+      <p id="endText"></p>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const canvas = document.getElementById("game");
+      const ctx = canvas.getContext("2d");
+      const scoreEl = document.getElementById("score");
+      const sizeEl = document.getElementById("size");
+      const timeEl = document.getElementById("time");
+      const highEl = document.getElementById("high");
+      const overlay = document.getElementById("overlay");
+      const endText = document.getElementById("endText");
+      const startBtn = document.getElementById("startBtn");
+      const restartBtn = document.getElementById("restartBtn");
+
+      const WORLD = { width: canvas.width, height: canvas.height };
+      const GAME_SECONDS = 90;
+      const START_RADIUS = 18;
+      const MAX_OBJECTS = 150;
+      const COLORS = ["#fb7185", "#f59e0b", "#22d3ee", "#34d399", "#a78bfa", "#f472b6", "#fcd34d"];
+
+      const keys = new Set();
+      const pointer = { active: false, x: WORLD.width / 2, y: WORLD.height / 2 };
+
+      let state;
+      let rafId;
+      let lastTick = 0;
+
+      function rand(min, max) {
+        return Math.random() * (max - min) + min;
+      }
+
+      function clamp(val, min, max) {
+        return Math.max(min, Math.min(max, val));
+      }
+
+      function dist(a, b) {
+        const dx = a.x - b.x;
+        const dy = a.y - b.y;
+        return Math.hypot(dx, dy);
+      }
+
+      function createObject(playerRadius) {
+        const edgePad = 22;
+        const sizeBias = rand(0.3, 1.8);
+        const radius = clamp(playerRadius * sizeBias, 6, 56);
+        return {
+          x: rand(edgePad, WORLD.width - edgePad),
+          y: rand(edgePad, WORLD.height - edgePad),
+          radius,
+          vx: rand(-55, 55),
+          vy: rand(-55, 55),
+          wobbleSeed: rand(0, Math.PI * 2),
+          color: COLORS[(Math.random() * COLORS.length) | 0],
+          points: Math.max(1, Math.round(radius * 2)),
+        };
+      }
+
+      function resetGame() {
+        const best = Number(localStorage.getItem("miniHoleDashHighScore") || 0);
+        state = {
+          running: false,
+          score: 0,
+          timeLeft: GAME_SECONDS,
+          player: {
+            x: WORLD.width / 2,
+            y: WORLD.height / 2,
+            radius: START_RADIUS,
+            speed: 220,
+            stun: 0,
+            pulse: 0,
+          },
+          objects: [],
+          particles: [],
+          highScore: best,
+        };
+
+        for (let i = 0; i < MAX_OBJECTS; i += 1) {
+          state.objects.push(createObject(state.player.radius));
+        }
+
+        updateHud();
+      }
+
+      function spawnParticles(x, y, color, n = 8) {
+        for (let i = 0; i < n; i += 1) {
+          state.particles.push({
+            x,
+            y,
+            vx: rand(-120, 120),
+            vy: rand(-120, 120),
+            size: rand(2, 5),
+            life: rand(0.25, 0.75),
+            ttl: rand(0.25, 0.75),
+            color,
+          });
+        }
+      }
+
+      function updateHud() {
+        scoreEl.textContent = state.score;
+        sizeEl.textContent = `${(state.player.radius / START_RADIUS).toFixed(2)}x`;
+        timeEl.textContent = Math.ceil(state.timeLeft);
+        highEl.textContent = state.highScore;
+      }
+
+      function startGame() {
+        state.running = true;
+        lastTick = performance.now();
+        overlay.classList.add("hidden");
+        if (!rafId) {
+          rafId = requestAnimationFrame(loop);
+        }
+      }
+
+      function endGame() {
+        state.running = false;
+        const oldHigh = state.highScore;
+        if (state.score > oldHigh) {
+          state.highScore = state.score;
+          localStorage.setItem("miniHoleDashHighScore", String(state.score));
+        }
+        updateHud();
+        endText.innerHTML = `Final Score: <span class="result">${state.score}</span>${state.score > oldHigh ? "<br><span class='result'>New High Score! 🎉</span>" : ""}`;
+        overlay.classList.remove("hidden");
+      }
+
+      function controlVector() {
+        let dx = 0;
+        let dy = 0;
+
+        if (keys.has("arrowup") || keys.has("w")) dy -= 1;
+        if (keys.has("arrowdown") || keys.has("s")) dy += 1;
+        if (keys.has("arrowleft") || keys.has("a")) dx -= 1;
+        if (keys.has("arrowright") || keys.has("d")) dx += 1;
+
+        if (pointer.active) {
+          const pdx = pointer.x - state.player.x;
+          const pdy = pointer.y - state.player.y;
+          const mag = Math.hypot(pdx, pdy);
+          if (mag > 5) {
+            dx += pdx / mag;
+            dy += pdy / mag;
+          }
+        }
+
+        const mag = Math.hypot(dx, dy);
+        if (mag === 0) return { x: 0, y: 0 };
+        return { x: dx / mag, y: dy / mag };
+      }
+
+      function update(dt) {
+        if (!state.running) return;
+
+        state.timeLeft -= dt;
+        if (state.timeLeft <= 0) {
+          state.timeLeft = 0;
+          endGame();
+          return;
+        }
+
+        const player = state.player;
+        player.pulse += dt;
+
+        if (player.stun > 0) {
+          player.stun -= dt;
+        } else {
+          const input = controlVector();
+          const speed = player.speed * clamp(1.6 - player.radius / 60, 0.55, 1.4);
+          player.x += input.x * speed * dt;
+          player.y += input.y * speed * dt;
+        }
+
+        player.x = clamp(player.x, player.radius, WORLD.width - player.radius);
+        player.y = clamp(player.y, player.radius, WORLD.height - player.radius);
+
+        for (const obj of state.objects) {
+          obj.x += obj.vx * dt;
+          obj.y += obj.vy * dt;
+
+          if (obj.x < obj.radius || obj.x > WORLD.width - obj.radius) obj.vx *= -1;
+          if (obj.y < obj.radius || obj.y > WORLD.height - obj.radius) obj.vy *= -1;
+        }
+
+        for (let i = state.objects.length - 1; i >= 0; i -= 1) {
+          const obj = state.objects[i];
+          const d = dist(player, obj);
+
+          if (d < player.radius + obj.radius * 0.9) {
+            if (obj.radius <= player.radius * 0.95) {
+              state.score += obj.points;
+              player.radius += obj.radius * 0.03;
+              spawnParticles(obj.x, obj.y, obj.color, 10);
+              state.objects.splice(i, 1);
+              state.objects.push(createObject(player.radius));
+            } else {
+              const push = Math.max(0.1, (obj.radius - player.radius) * 0.03);
+              const nx = (player.x - obj.x) / (d || 1);
+              const ny = (player.y - obj.y) / (d || 1);
+              player.x += nx * push * 18;
+              player.y += ny * push * 18;
+              player.stun = 0.3;
+              spawnParticles(player.x, player.y, "#fb7185", 4);
+            }
+          }
+        }
+
+        for (let i = state.particles.length - 1; i >= 0; i -= 1) {
+          const p = state.particles[i];
+          p.life -= dt;
+          if (p.life <= 0) {
+            state.particles.splice(i, 1);
+            continue;
+          }
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+          p.vx *= 0.95;
+          p.vy *= 0.95;
+        }
+
+        updateHud();
+      }
+
+      function drawGrid() {
+        ctx.save();
+        ctx.strokeStyle = "rgba(148,163,184,0.09)";
+        ctx.lineWidth = 1;
+        const gap = 40;
+        for (let x = 0; x <= WORLD.width; x += gap) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, WORLD.height);
+          ctx.stroke();
+        }
+        for (let y = 0; y <= WORLD.height; y += gap) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(WORLD.width, y);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      function draw() {
+        ctx.clearRect(0, 0, WORLD.width, WORLD.height);
+        drawGrid();
+
+        for (const obj of state.objects) {
+          const wobble = Math.sin(state.player.pulse * 2 + obj.wobbleSeed) * 0.8;
+          ctx.beginPath();
+          ctx.fillStyle = obj.color;
+          ctx.globalAlpha = 0.92;
+          ctx.arc(obj.x + wobble, obj.y, obj.radius, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.strokeStyle = "rgba(255,255,255,0.17)";
+          ctx.lineWidth = 2;
+          ctx.arc(obj.x + wobble * 1.4, obj.y - obj.radius * 0.15, obj.radius * 0.45, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        const player = state.player;
+        const pulse = Math.sin(player.pulse * 8) * 0.35;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.fillStyle = "#020617";
+        ctx.shadowColor = "rgba(14, 165, 233, 0.55)";
+        ctx.shadowBlur = 25;
+        ctx.arc(player.x, player.y, player.radius + pulse, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.strokeStyle = player.stun > 0 ? "rgba(251,113,133,0.8)" : "rgba(34,211,238,0.6)";
+        ctx.lineWidth = 3;
+        ctx.arc(player.x, player.y, player.radius + 5 + pulse, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+
+        for (const p of state.particles) {
+          ctx.globalAlpha = p.life / p.ttl;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        if (!state.running) {
+          ctx.fillStyle = "rgba(2,6,23,0.35)";
+          ctx.fillRect(0, 0, WORLD.width, WORLD.height);
+        }
+      }
+
+      function loop(ts) {
+        const dt = Math.min(0.033, (ts - lastTick) / 1000);
+        lastTick = ts;
+        update(dt);
+        draw();
+        rafId = requestAnimationFrame(loop);
+      }
+
+      window.addEventListener("keydown", (e) => {
+        keys.add(e.key.toLowerCase());
+        if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)) {
+          e.preventDefault();
+        }
+      });
+
+      window.addEventListener("keyup", (e) => {
+        keys.delete(e.key.toLowerCase());
+      });
+
+      function setPointerFromEvent(e) {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = WORLD.width / rect.width;
+        const scaleY = WORLD.height / rect.height;
+        pointer.x = (e.clientX - rect.left) * scaleX;
+        pointer.y = (e.clientY - rect.top) * scaleY;
+      }
+
+      canvas.addEventListener("mousemove", (e) => {
+        pointer.active = true;
+        setPointerFromEvent(e);
+      });
+
+      canvas.addEventListener("mouseleave", () => {
+        pointer.active = false;
+      });
+
+      canvas.addEventListener("touchstart", (e) => {
+        pointer.active = true;
+        setPointerFromEvent(e.touches[0]);
+      }, { passive: true });
+
+      canvas.addEventListener("touchmove", (e) => {
+        pointer.active = true;
+        setPointerFromEvent(e.touches[0]);
+      }, { passive: true });
+
+      canvas.addEventListener("touchend", () => {
+        pointer.active = false;
+      }, { passive: true });
+
+      startBtn.addEventListener("click", () => {
+        resetGame();
+        startGame();
+      });
+
+      restartBtn.addEventListener("click", () => {
+        resetGame();
+        startGame();
+      });
+
+      resetGame();
+      draw();
+    })();
+  </script>
+</body>
+</html>
