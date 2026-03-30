@@ -1,0 +1,7 @@
+{
+  "name": "python-interpreter",
+  "owner": "local",
+  "displayName": "Python Interpreter (Unrestricted)",
+  "description": "Runs local Python directly on the host machine from LM Studio tool calls.",
+  "entry": "dist/index.js"
+}
